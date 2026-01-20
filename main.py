@@ -95,18 +95,21 @@ async def rewrite_email_with_ai(original_sub, original_body, app_name):
         model_version = "gemini-2.0-flash" 
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_version}:generateContent?key={api_key}"
         
-        prompt = f"""
-        Act as a professional app growth manager. Rewrite the email below for an Android App named "{app_name}".
-        Constraints:
-        1. Keep the meaning exactly the same.
-        2. Tone: Professional and polite.
-        3. Output format MUST be: Subject: [New Subject] ||| Body: [New Body]
+                prompt = f"""
+        Act as a professional app growth manager. 
+        Your task is to REWRITE the following email for an Android App named "{app_name}".
+        
+        CRITICAL RULES:
+        1. Create a completely UNIQUE version by changing synonyms and sentence structures.
+        2. Keep all HTML tags (<b>, <a>, ✅) and links exactly as they are.
+        3. Maintain the professional and persuasive tone.
+        4. Do NOT just copy-paste. Be creative with the wording.
+        5. Output format MUST be: Subject: [New Subject] ||| Body: [New Body]
         
         Original Subject: {original_sub}
         Original Body: {original_body}
         """
-        payload = {"contents": [{"parts": [{"text": prompt}]}]}
-        headers = {'Content-Type': 'application/json'}
+
 
         try:
             response = requests.post(url, headers=headers, data=json.dumps(payload), timeout=30)
