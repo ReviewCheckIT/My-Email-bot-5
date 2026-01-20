@@ -1,0 +1,5 @@
+python-telegram-bot==20.8
+firebase-admin==6.5.0
+requests==2.31.0
+python-dotenv==1.0.1
+asyncio==3.4.3
