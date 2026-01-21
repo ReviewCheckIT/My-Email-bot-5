@@ -99,7 +99,7 @@ async def rewrite_email_with_ai(original_sub, original_body, app_name):
         RULES:
         1. Keep the CORE message: Organic installs, real reviews, and ranking growth.
         2. Change the sentences, structure, and greetings to make it unique every time.
-        3. Do NOT change the contact links or company name (Brother IT LTD).
+        3. Do NOT change the contact links or company name (Skyzone IT).
         4. Use a persuasive and professional tone.
         5. Output format must be EXACTLY: Subject: [New Subject] ||| Body: [New Body]
         
