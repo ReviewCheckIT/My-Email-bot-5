@@ -131,7 +131,7 @@ def main_menu_keyboard():
 def back_button():
     return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data='btn_main_menu')]])
 
-# --- Background Worker (Multi-Bot Optimized) ---
+# --- Background Worker (FIXED ValueError VERSION) ---
 async def email_worker(context: ContextTypes.DEFAULT_TYPE):
     global IS_SENDING
     chat_id = context.job.chat_id
@@ -147,23 +147,40 @@ async def email_worker(context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id, f"🤖 Bot {BOT_ID_PREFIX} কাজ শুরু করেছে...")
 
     while IS_SENDING:
-        # Atomic selection for multi-bot
-        all_leads = leads_ref.order_by_child('status').equal_to(None).limit_to_first(20).get()
+        # মাদারচোদ এখানে সরাসরি limit_to_first ব্যবহার করা হয়েছে error এড়াতে
+        all_leads = leads_ref.limit_to_first(50).get()
         if not all_leads: break
         
         target_key = None
+        target_data = None
         now = datetime.now()
         
+        # ডাটাবেজ থেকে আসা ডাটা ফিল্টার করা
         for key, val in all_leads.items():
+            # যদি স্ট্যাটাস অলরেডি 'sent' থাকে তবে পরেরটা দেখ
+            if val.get('status') is not None:
+                continue
+                
             proc_by = val.get('processing_by')
             last_ping = val.get('last_ping')
-            # যদি কেউ না ধরে থাকে অথবা ৫ মিনিট আগে অন্য কেউ ধরেছিল কিন্তু কাজ করেনি
-            if not proc_by or (last_ping and (now - datetime.fromisoformat(last_ping)) > timedelta(minutes=5)):
+            
+            # মাল্টি-বট লক চেক
+            is_locked = False
+            if proc_by and last_ping:
+                try:
+                    last_ping_dt = datetime.fromisoformat(last_ping)
+                    if (now - last_ping_dt) < timedelta(minutes=5):
+                        is_locked = True
+                except: pass
+
+            if not is_locked:
                 target_key = key
+                target_data = val
                 break
         
         if not target_key:
-            await asyncio.sleep(30)
+            # যদি সব ইমেইল প্রসেস হয়ে গিয়ে থাকে অথবা কোনোটা ফ্রি না থাকে
+            await asyncio.sleep(20)
             continue
 
         # Lock the lead
@@ -172,7 +189,6 @@ async def email_worker(context: ContextTypes.DEFAULT_TYPE):
             'last_ping': now.isoformat()
         })
         
-        target_data = all_leads[target_key]
         email = target_data.get('email')
         app_name = target_data.get('app_name', 'your app')
         
@@ -195,9 +211,11 @@ async def email_worker(context: ContextTypes.DEFAULT_TYPE):
             count += 1
             if count % 10 == 0:
                 await context.bot.send_message(chat_id, f"📊 রিপোর্ট: {count}টি সম্পন্ন।")
+            # ৫ মিনিট গ্যাপ
             await asyncio.sleep(random.randint(180, 300))
         else:
-            leads_ref.child(target_key).update({'processing_by': None})
+            # ফেইল করলে লক আনলক করে দাও
+            leads_ref.child(target_key).update({'processing_by': None, 'last_ping': None})
             await asyncio.sleep(60)
 
     IS_SENDING = False
@@ -255,7 +273,6 @@ def main():
     app.add_handler(CallbackQueryHandler(button_tap))
 
     if RENDER_URL:
-        # Webhook with root path support for UptimeRobot
         app.run_webhook(listen="0.0.0.0", port=PORT, url_path=TOKEN[-10:], 
                         webhook_url=f"{RENDER_URL}/{TOKEN[-10:]}", allowed_updates=Update.ALL_TYPES)
     else:
