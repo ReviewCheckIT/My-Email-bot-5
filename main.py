@@ -6,7 +6,6 @@ import asyncio
 import random
 import string
 import requests
-import time
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
@@ -15,7 +14,6 @@ from telegram.ext import (
     Application, 
     CommandHandler, 
     ContextTypes, 
-    MessageHandler, 
     CallbackQueryHandler,
     filters
 )
@@ -131,7 +129,7 @@ def main_menu_keyboard():
 def back_button():
     return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data='btn_main_menu')]])
 
-# --- Background Worker (FIXED ValueError VERSION) ---
+# --- Background Worker (Stable Version) ---
 async def email_worker(context: ContextTypes.DEFAULT_TYPE):
     global IS_SENDING
     chat_id = context.job.chat_id
@@ -147,24 +145,31 @@ async def email_worker(context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id, f"🤖 Bot {BOT_ID_PREFIX} কাজ শুরু করেছে...")
 
     while IS_SENDING:
-        # মাদারচোদ এখানে সরাসরি limit_to_first ব্যবহার করা হয়েছে error এড়াতে
-        all_leads = leads_ref.limit_to_first(50).get()
-        if not all_leads: break
+        # মাদারচোদ, এখানে order_by_key() যোগ করা হয়েছে যেন limit কাজ করে
+        # এবং equal_to(None) সরায়ে পাইথন দিয়ে ফিল্টার করা হচ্ছে
+        try:
+            all_leads = leads_ref.order_by_key().limit_to_first(100).get()
+        except Exception as e:
+            logger.error(f"❌ DB Fetch Error: {e}")
+            await asyncio.sleep(30)
+            continue
+
+        if not all_leads:
+            await context.bot.send_message(chat_id, "ℹ️ ডাটাবেজে নতুন কোনো ইমেইল পাওয়া যায়নি।")
+            break
         
         target_key = None
         target_data = None
         now = datetime.now()
         
-        # ডাটাবেজ থেকে আসা ডাটা ফিল্টার করা
+        # ডাটা ফিল্টারিং লজিক (Manual filter to avoid SDK issues)
         for key, val in all_leads.items():
-            # যদি স্ট্যাটাস অলরেডি 'sent' থাকে তবে পরেরটা দেখ
             if val.get('status') is not None:
                 continue
                 
             proc_by = val.get('processing_by')
             last_ping = val.get('last_ping')
             
-            # মাল্টি-বট লক চেক
             is_locked = False
             if proc_by and last_ping:
                 try:
@@ -179,8 +184,7 @@ async def email_worker(context: ContextTypes.DEFAULT_TYPE):
                 break
         
         if not target_key:
-            # যদি সব ইমেইল প্রসেস হয়ে গিয়ে থাকে অথবা কোনোটা ফ্রি না থাকে
-            await asyncio.sleep(20)
+            await asyncio.sleep(30)
             continue
 
         # Lock the lead
@@ -211,10 +215,9 @@ async def email_worker(context: ContextTypes.DEFAULT_TYPE):
             count += 1
             if count % 10 == 0:
                 await context.bot.send_message(chat_id, f"📊 রিপোর্ট: {count}টি সম্পন্ন।")
-            # ৫ মিনিট গ্যাপ
+            # ৩ থেকে ৫ মিনিট বিরতি (সেফটি)
             await asyncio.sleep(random.randint(180, 300))
         else:
-            # ফেইল করলে লক আনলক করে দাও
             leads_ref.child(target_key).update({'processing_by': None, 'last_ping': None})
             await asyncio.sleep(60)
 
